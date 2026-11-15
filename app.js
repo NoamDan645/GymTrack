@@ -37,6 +37,7 @@ function freshDb() {
     exercises: clone(DEFAULT_EXERCISES),
     plans: clone(DEFAULT_PLANS),
     sessions: clone(SEED_SESSIONS),
+    weights: [],
     settings: { rest: 60, theme: 'auto', sound: true },
     lastBackup: null,
   };
@@ -46,6 +47,8 @@ function normalize(d) {
   d.exercises = d.exercises || {};
   d.plans = d.plans || clone(DEFAULT_PLANS);
   d.sessions = Array.isArray(d.sessions) ? d.sessions : [];
+  d.weights = (Array.isArray(d.weights) ? d.weights : []).filter((w) => w && /^\d{4}-\d{2}-\d{2}$/.test(w.date) && Number.isFinite(w.kg) && w.kg > 0);
+  for (const w of d.weights) w.id = w.id || 'w' + Math.random().toString(36).slice(2);
   d.settings = Object.assign({ rest: 60, theme: 'auto', sound: true }, d.settings || {});
   for (const [id, def] of Object.entries(DEFAULT_EXERCISES)) {
     const ex = d.exercises[id];
@@ -129,6 +132,13 @@ function nextPlan() {
   if (!last) return keys[0];
   const i = keys.indexOf(last.plan);
   return keys[(i + 1) % keys.length];
+}
+const weightsSorted = () => db.weights.slice().sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+const round1 = (x) => Math.round(x * 10) / 10;
+function weightDelta(a, b) {
+  const d = round1(b - a);
+  if (d === 0) return 'ללא שינוי';
+  return `${d > 0 ? 'עלייה' : 'ירידה'} של ${n(Math.abs(d))} ${KG}`;
 }
 const lpOf = (id) => lastPerf(id, draft && draft.editId ? draft.editId : undefined);
 const pairsOf = (list) => { const out = []; for (let i = 0; i < list.length; i += 2) out.push(list.slice(i, i + 2)); return out; };
@@ -367,6 +377,7 @@ function viewHome() {
     h += '<section class="card"><h3>עוד אין אימונים</h3><p class="muted">בוחרים אימון למעלה ומתחילים.</p></section>';
   }
 
+  h += weightCard();
   const month = today.slice(0, 7);
   const weekStart = iso(start);
   h += `<div class="stats">
@@ -376,6 +387,50 @@ function viewHome() {
   </div>`;
   if (needsBackup()) h += '<a class="card small muted" href="#/set">עבר זמן מאז הגיבוי האחרון. כדאי לייצא גיבוי במסך ההגדרות.</a>';
   return h;
+}
+function weightCard() {
+  const ws = weightsSorted();
+  if (!ws.length) {
+    return `<section class="card"><h3>משקל גוף</h3><p class="muted small">עוד אין שקילות. כדאי להתחיל לתעד, ואחרי כמה שבועות יופיע גרף.</p>
+      <button type="button" class="btn line" style="margin-top:12px" data-act="weighSheet">${IC.plus} שקילה ראשונה</button></section>`;
+  }
+  const l = ws[ws.length - 1];
+  const p = ws[ws.length - 2];
+  return `<section class="card"><h3>משקל גוף<span class="muted small">${rel(l.date)}</span></h3>
+    <div class="row" style="align-items:baseline;gap:8px;flex-wrap:wrap"><b style="font-size:32px;line-height:1">${n(l.kg)}</b><span class="muted">${KG}</span>${p ? `<span class="tag plain">${weightDelta(p.kg, l.kg)} מהשקילה הקודמת</span>` : ''}</div>
+    <div class="row" style="margin-top:12px"><button type="button" class="btn sm line" style="flex:1" data-act="weighSheet">${IC.plus} שקילה חדשה</button><button type="button" class="btn sm ghost" style="flex:1" data-act="weightChart">לגרף</button></div></section>`;
+}
+function weighList() {
+  const rows = weightsSorted().slice(-8).reverse();
+  if (!rows.length) return '<div class="item"><span class="muted">עוד אין שקילות.</span></div>';
+  return rows.map((w) => `<div class="item"><span class="t"><b>${n(w.kg)} ${KG}</b><span>${dayName(w.date)}, ${fmtDate(w.date)}</span></span><button type="button" class="icon-btn" data-act="delWeight" data-id="${esc(w.id)}" aria-label="מחק שקילה">${IC.trash}</button></div>`).join('');
+}
+function weighSheet() {
+  const ws = weightsSorted();
+  const last = ws[ws.length - 1];
+  openSheet(`<div class="grab"></div>
+    <div class="sheet-h"><h2>שקילה</h2><button type="button" class="icon-btn" data-act="closeSheet" aria-label="סגור">${IC.x}</button></div>
+    <form id="weigh-form" autocomplete="off">
+      <div class="stp"><div class="ctl">
+        <button type="button" data-act="wstep" data-d="-0.1" aria-label="פחות">−</button>
+        <input id="weigh-kg" name="kg" inputmode="decimal" value="${last ? n(last.kg) : ''}" placeholder="—" aria-label="משקל בקילוגרמים">
+        <button type="button" data-act="wstep" data-d="0.1" aria-label="יותר">+</button>
+      </div><span class="u">${KG}</span></div>
+      <label class="date-row">תאריך<input type="date" name="date" value="${todayISO()}" max="${todayISO()}"></label>
+      <div class="stack"><button type="submit" class="btn primary big">שמור שקילה</button></div>
+    </form>
+    <p class="sect">שקילות אחרונות</p>
+    <div class="list" id="wlist">${weighList()}</div>`);
+}
+function saveWeigh(form) {
+  const kg = num(form.elements.kg.value);
+  const date = form.elements.date.value || todayISO();
+  if (kg == null || kg < 20 || kg > 400) { toast('כדאי להזין משקל תקין בקילוגרמים'); return; }
+  const kk = round1(kg);
+  const ex = db.weights.find((w) => w.date === date);
+  if (ex) ex.kg = kk; else db.weights.push({ id: 'w' + Date.now().toString(36), date, kg: kk });
+  save();
+  closeSheet(() => { render(); toast('השקילה נשמרה'); });
 }
 function needsBackup() {
   if (db.sessions.length < 4) return false;
@@ -811,6 +866,7 @@ function chartOptions() {
   return groups;
 }
 function chartSeries(key) {
+  if (key === 'body') return weightsSorted().map((w) => ({ d: w.date, v: w.kg }));
   const ss = sorted().reverse();
   const pts = [];
   for (const s of ss) {
@@ -832,6 +888,7 @@ function chartSeries(key) {
   return pts;
 }
 function chartMeta(key) {
+  if (key === 'body') return { fmt: (v) => n(v), cap: 'משקל גוף (ק"ג)', color: 'var(--A)' };
   if (key === 'run:sec') return { fmt: fmtTime, cap: 'זמן ריצה (דקות)', color: 'var(--ok)' };
   if (key === 'run:km') return { fmt: (v) => n(v), cap: 'מרחק ריצה (ק"מ)', color: 'var(--ok)' };
   if (key === 'run:pace') return { fmt: fmtTime, cap: 'קצב ריצה (דקות לק"מ, נמוך יותר = מהיר יותר)', color: 'var(--ok)' };
@@ -876,22 +933,27 @@ function drawChart() {
   const meta = chartMeta(key);
   if (!pts.length) { box.innerHTML = '<p class="chart-note">עוד אין נתונים למדד הזה. הוא יתמלא אחרי האימון הבא.</p>'; return; }
   let note = meta.cap;
-  if (pts.length === 1) note += '. יש כרגע מדידה אחת, והקו יופיע מהאימון הבא.';
+  if (pts.length === 1) note += key === 'body' ? '. יש כרגע שקילה אחת, והקו יופיע מהשקילה הבאה.' : '. יש כרגע מדידה אחת, והקו יופיע מהאימון הבא.';
+  else if (key === 'body') note += `. מאז ${fmtDate(pts[0].d)}: ${weightDelta(pts[0].v, pts[pts.length - 1].v)}`;
   box.innerHTML = `<div class="chart-wrap">${chartSvg(pts, meta)}</div><p class="chart-note">${esc(note)}</p>`;
 }
 function viewLog() {
   const ss = sorted();
   const runOpts = [['run:sec', 'זמן'], ['run:km', 'מרחק'], ['run:pace', 'קצב'], ['run:kcal', 'קלוריות']];
   const isRun = ui.chartKey.startsWith('run:');
+  const isBody = ui.chartKey === 'body';
   let h = `<header class="top"><div><p class="eyebrow">${ss.length} אימונים</p><h1>יומן</h1></div></header>
     <section class="card" style="margin-top:0">
       <h3>התקדמות</h3>
       <div class="seg" style="margin-bottom:10px">
         <button type="button" class="${isRun ? 'on' : ''}" data-act="chartMode" data-v="run">ריצה</button>
-        <button type="button" class="${isRun ? '' : 'on'}" data-act="chartMode" data-v="ex">תרגילים</button>
+        <button type="button" class="${!isRun && !isBody ? 'on' : ''}" data-act="chartMode" data-v="ex">תרגילים</button>
+        <button type="button" class="${isBody ? 'on' : ''}" data-act="chartMode" data-v="body">משקל גוף</button>
       </div>`;
   if (isRun) {
     h += `<div class="chips">${runOpts.map(([k, l]) => `<button type="button" class="chip ${ui.chartKey === k ? 'on' : ''}" data-act="chartKey" data-v="${k}">${l}</button>`).join('')}</div>`;
+  } else if (isBody) {
+    h += `<button type="button" class="btn sm line" data-act="weighSheet">${IC.plus} שקילה חדשה</button>`;
   } else {
     h += `<select data-in="chartKey" aria-label="בחירת תרגיל">${chartOptions().map(([g, items]) => `<optgroup label="${esc(g)}">${items.map(([id, name]) => `<option value="${esc(id)}" ${ui.chartKey === id ? 'selected' : ''}>${esc(name)}</option>`).join('')}</optgroup>`).join('')}</select>`;
   }
@@ -1252,6 +1314,7 @@ const actions = {
   timerSkip: () => stopTimer(),
   chartMode: (el) => {
     if (el.dataset.v === 'run') ui.chartKey = 'run:sec';
+    else if (el.dataset.v === 'body') ui.chartKey = 'body';
     else {
       const withData = sorted().flatMap((s) => Object.keys(s.ex).filter((id) => s.ex[id].sets.length));
       const g = chartOptions();
@@ -1314,6 +1377,23 @@ const actions = {
     $$('#img-results button').forEach((b) => b.classList.toggle('on', b.dataset.img === ui.form.img));
   },
   imgSearch: () => imgSearch(),
+  weighSheet: () => weighSheet(),
+  weightChart: () => { ui.chartKey = 'body'; go('#/log'); },
+  wstep: (el) => {
+    const inp = $('#weigh-kg');
+    const ws = weightsSorted();
+    const cur = num(inp.value) ?? (ws.length ? ws[ws.length - 1].kg : 70);
+    inp.value = n(Math.max(20, round1(cur + +el.dataset.d)));
+    buzz(8);
+  },
+  delWeight: (el) => {
+    db.weights = db.weights.filter((w) => w.id !== el.dataset.id);
+    save();
+    const l = $('#wlist');
+    if (l) l.innerHTML = weighList();
+    render();
+    toast('השקילה נמחקה');
+  },
 };
 
 document.addEventListener('click', (e) => {
@@ -1351,6 +1431,7 @@ document.addEventListener('keydown', (e) => {
 });
 document.addEventListener('submit', (e) => {
   if (e.target.id === 'ex-form') { e.preventDefault(); saveExForm(e.target); }
+  if (e.target.id === 'weigh-form') { e.preventDefault(); saveWeigh(e.target); }
 });
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && e.target.id === 'img-q') { e.preventDefault(); imgSearch(); }
