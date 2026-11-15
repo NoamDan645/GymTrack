@@ -1,11 +1,11 @@
 /* Service worker: מאפשר לאפליקציה לעבוד גם בלי קליטה במכון.
    קוד האפליקציה: קודם רשת (כדי לקבל עדכונים), ואם אין קליטה אז מהמטמון.
    תמונות: קודם מהמטמון, כי הן לא משתנות. */
-const VERSION = 'v2';
+const VERSION = 'v3';
 const SHELL = 'gym-shell-' + VERSION;
 const IMAGES = 'gym-img-' + VERSION;
 
-const SHELL_FILES = ['./', 'index.html', 'style.css', 'app.js', 'data.js', 'muscles.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png'];
+const SHELL_FILES = ['./', 'index.html', 'style.css', 'app.js', 'data.js', 'muscles.js', 'sync.js', 'sheets-backup.gs', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png'];
 const IMAGE_KEYS = [
   'Machine_Bench_Press', 'Seated_Cable_Rows', 'Seated_Dumbbell_Press', 'Machine_Shoulder_Military_Press',
   'Wide-Grip_Lat_Pulldown', 'Side_Lateral_Raise', 'Triceps_Pushdown', 'Dumbbell_Bicep_Curl',

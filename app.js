@@ -70,7 +70,8 @@ function load() {
 }
 function save() {
   try { localStorage.setItem(KEY, JSON.stringify(db)); }
-  catch (e) { toast('השמירה במכשיר נכשלה'); }
+  catch (e) { toast('השמירה במכשיר נכשלה'); return; }
+  if (typeof scheduleSync === 'function') scheduleSync();
 }
 function loadDraft() {
   try {
@@ -385,6 +386,7 @@ function viewHome() {
     <div class="stat"><b>${ss.filter((s) => s.date.slice(0, 7) === month).length}</b><span>אימונים החודש</span></div>
     <div class="stat"><b>${ss.length}</b><span>סך הכול</span></div>
   </div>`;
+  h += syncNotice();
   if (needsBackup()) h += '<a class="card small muted" href="#/set">עבר זמן מאז הגיבוי האחרון. כדאי לייצא גיבוי במסך ההגדרות.</a>';
   return h;
 }
@@ -433,6 +435,7 @@ function saveWeigh(form) {
   closeSheet(() => { render(); toast('השקילה נשמרה'); });
 }
 function needsBackup() {
+  if (typeof syncReady === 'function' && syncReady()) return false;
   if (db.sessions.length < 4) return false;
   if (!db.lastBackup) return true;
   return daysAgo(db.lastBackup) > 21;
@@ -1009,7 +1012,9 @@ function viewSettings() {
     <p class="sect">מראה</p>
     <section class="card" style="margin-top:8px"><div class="seg">${themes.map(([k, l]) => `<button type="button" class="${st.theme === k ? 'on' : ''}" data-act="theme" data-v="${k}">${l}</button>`).join('')}</div></section>
 
-    <p class="sect">גיבוי</p>
+    ${syncSection()}
+
+    <p class="sect">גיבוי לקובץ</p>
     <section class="card" style="margin-top:8px">
       <p class="muted small">הנתונים שמורים רק במכשיר הזה. ייצוא שומר קובץ גיבוי, וייבוא משחזר ממנו.</p>
       <div class="row" style="margin-top:12px">
@@ -1395,6 +1400,8 @@ const actions = {
     toast('השקילה נמחקה');
   },
 };
+
+Object.assign(actions, syncActions);
 
 document.addEventListener('click', (e) => {
   const el = e.target.closest('[data-act]');
