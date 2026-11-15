@@ -302,6 +302,21 @@ label.field > * { font-size: 16px; }
 .confirm { padding: 8px 4px 0; display: grid; gap: 10px; }
 .confirm p { color: var(--tx2); margin-bottom: 6px; }
 
+/* ---------- שרירים ---------- */
+.mfig { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; direction: ltr; }
+.mfig figure { margin: 0; text-align: center; }
+.mfig svg { width: 100%; max-width: 150px; height: auto; display: block; margin: 0 auto; }
+.mfig figcaption { font-size: 12px; color: var(--tx2); margin-top: 4px; direction: rtl; }
+.mus .base { fill: var(--card2); stroke: var(--line); stroke-width: 1; }
+.mus .m { fill: var(--tx3); fill-opacity: .2; }
+.mus .m.s { fill: var(--pc); fill-opacity: .4; }
+.mus .m.p { fill: var(--pc); fill-opacity: 1; }
+.mleg { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 6px; font-size: 15px; }
+.mleg li { display: flex; align-items: flex-start; gap: 10px; }
+.mleg .dot { width: 14px; height: 14px; border-radius: 4px; flex: none; margin-top: 4px; background: var(--pc); }
+.mleg .dot.s { opacity: .4; }
+.chip.sec { background: var(--pcbg); color: var(--pc); box-shadow: inset 0 0 0 1.5px var(--pc); }
+
 /* ---------- יומן ---------- */
 .chart-wrap { direction: ltr; margin-top: 6px; }
 .chart-wrap svg { width: 100%; height: auto; display: block; overflow: visible; }

@@ -47,6 +47,10 @@ function normalize(d) {
   d.plans = d.plans || clone(DEFAULT_PLANS);
   d.sessions = Array.isArray(d.sessions) ? d.sessions : [];
   d.settings = Object.assign({ rest: 60, theme: 'auto', sound: true }, d.settings || {});
+  for (const [id, def] of Object.entries(DEFAULT_EXERCISES)) {
+    const ex = d.exercises[id];
+    if (ex && !ex.muscles && def.muscles) ex.muscles = clone(def.muscles);
+  }
   for (const p of Object.values(d.plans)) p.list = (p.list || []).filter((id) => d.exercises[id]);
   for (const s of d.sessions) { s.ex = s.ex || {}; s.id = s.id || 's' + Math.random().toString(36).slice(2); }
   return d;
@@ -657,10 +661,11 @@ function exSheet(id, withSets) {
     ? `<img src="${esc(imgSrc(ex.img, 0))}" alt="${esc(ex.name)}, תנוחת התחלה" onerror="this.remove()"><img class="f2" src="${esc(imgSrc(ex.img, 1))}" alt="${esc(ex.name)}, תנוחת סיום" onerror="this.remove()"><span class="cap">התחלה וסיום · נגיעה עוצרת</span>`
     : '';
   let h = `<div class="grab"></div>
-    <div class="sheet-h"><div><h2>${esc(ex.name)}</h2><p class="muted small">${specTxt(ex)}${ex.target ? ` · יעד: ${esc(ex.target)}` : ''}</p></div>
+    <div class="sheet-h"><div><h2>${esc(ex.name)}</h2><p class="muted small">${specTxt(ex)}${ex.muscles && ex.muscles.p && ex.muscles.p.length ? ` · ${esc(muscleNames(ex.muscles.p))}` : ''}${ex.target ? ` · יעד: ${esc(ex.target)}` : ''}</p></div>
       <button type="button" class="icon-btn" data-act="closeSheet" aria-label="סגור">${IC.x}</button></div>
     <div class="anim" data-act="toggleAnim"><span class="ph">${IC.bell}</span>${imgs}</div>`;
   if (ex.tips && ex.tips.length) h += `<section class="card"><h3>דגשים</h3><ul class="tips">${ex.tips.map((t) => `<li>${esc(t)}</li>`).join('')}</ul></section>`;
+  h += muscleCard(ex.muscles);
   if (lp) {
     h += `<section class="card"><h3>פעם קודמת<span class="muted small">${rel(lp.date)}</span></h3>
       <p>${sumSets(ex, lp.sets) || 'בוצע'}${lp.note ? ` · ${esc(lp.note)}` : ''}</p>${withSets ? easyHint(id) : ''}</section>`;
@@ -1004,7 +1009,7 @@ function exForm(pid, index) {
   const isNew = index == null;
   const id = isNew ? null : db.plans[pid].list[index];
   const ex = isNew ? { name: '', sets: 3, reps: '12', kind: 'weight', step: 2.5, target: '', tips: [], img: null } : exDef(id);
-  ui.form = { pid, id, img: ex.img || null };
+  ui.form = { pid, id, img: ex.img || null, muscles: clone(ex.muscles || { p: [], s: [] }) };
   const kinds = [['weight', 'משקל וחזרות'], ['body', 'חזרות בלבד'], ['time', 'זמן (שניות)']];
   return `<div class="grab"></div>
     <div class="sheet-h"><h2>${isNew ? 'תרגיל חדש' : 'עריכת תרגיל'}</h2><button type="button" class="icon-btn" data-act="closeSheet" aria-label="סגור">${IC.x}</button></div>
@@ -1020,6 +1025,9 @@ function exForm(pid, index) {
       </div>
       <label class="field">יעד (לא חובה)<input type="text" name="target" value="${esc(ex.target || '')}" placeholder="לדוגמה: 40 ${esc(KG)}"></label>
       <label class="field">דגשים לטכניקה, כל דגש בשורה<textarea name="tips" rows="4">${esc((ex.tips || []).join('\n'))}</textarea></label>
+      <div class="field">שרירים (לחיצה: עיקרי, עוד לחיצה: משני, ועוד אחת: ביטול)
+        <div class="chips" id="mchips">${muscleChips()}</div>
+      </div>
       <div class="field">תמונה
         <div class="imgpick" id="imgpick">${imgPickHtml()}</div>
       </div>
@@ -1029,6 +1037,10 @@ function exForm(pid, index) {
       <div class="imgpick" id="img-results"></div>
       <div class="stack"><button type="submit" class="btn primary big">${isNew ? 'הוסף לאימון' : 'שמור'}</button></div>
     </form>`;
+}
+function muscleChips() {
+  const m = ui.form.muscles;
+  return MUSCLE_KEYS.map((k) => `<button type="button" class="chip mchip ${m.p.includes(k) ? 'on' : m.s.includes(k) ? 'sec' : ''}" data-act="toggleMuscle" data-m="${esc(k)}">${MUSCLE_NAMES[k]}</button>`).join('');
 }
 function imgPickHtml() {
   const cur = ui.form.img;
@@ -1081,6 +1093,7 @@ function saveExForm(form) {
     tips: String(fd.get('tips') || '').split('\n').map((t) => t.replace(/^[\s·•\-–]+/, '').trim()).filter(Boolean),
     img: f.img || null,
   });
+  if (f.muscles.p.length || f.muscles.s.length) ex.muscles = f.muscles; else delete ex.muscles;
   const goal = kind === 'weight' && ex.target ? ex.target.match(/d+(.d+)?/) : null;
   if (goal) ex.goalW = parseFloat(goal[0]); else delete ex.goalW;
   if (!ex.target) delete ex.target;
@@ -1286,6 +1299,14 @@ const actions = {
   },
   editEx: (el) => openSheet(exForm(el.dataset.plan, +el.dataset.i), 'p' + el.dataset.plan),
   addEx: (el) => openSheet(exForm(el.dataset.plan, null), 'p' + el.dataset.plan),
+  toggleMuscle: (el) => {
+    if (!ui.form) return;
+    const m = ui.form.muscles, k = el.dataset.m;
+    if (m.p.includes(k)) { m.p = m.p.filter((x) => x !== k); m.s.push(k); }
+    else if (m.s.includes(k)) m.s = m.s.filter((x) => x !== k);
+    else m.p.push(k);
+    $('#mchips').innerHTML = muscleChips();
+  },
   pickImg: (el) => {
     if (!ui.form) return;
     ui.form.img = el.dataset.img || null;
